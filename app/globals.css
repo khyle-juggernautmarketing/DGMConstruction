@@ -1,0 +1,202 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply text-brand-charcoal antialiased overflow-x-hidden;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  @media (min-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: inherit;
+    }
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  @keyframes hero-aside-in {
+    from {
+      opacity: 0;
+      transform: translateY(30px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  .animate-hero-aside {
+    animation: hero-aside-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation-delay: 0.25s;
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-hero-aside {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes hero-line-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .hero-line {
+    opacity: 0;
+    animation: hero-line-up 0.5s ease-out forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-line {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .hero-line-d0 { animation-delay: 0.15s; }
+  .hero-line-d1 { animation-delay: 0.22s; }
+  .hero-line-d2 { animation-delay: 0.29s; }
+  .hero-line-d3 { animation-delay: 0.36s; }
+
+  @keyframes form-option-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .animate-form-option {
+    opacity: 0;
+    animation: form-option-in 0.25s ease-out forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-form-option {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes form-step-in {
+    from {
+      opacity: 0;
+      transform: translateX(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  .animate-form-step {
+    opacity: 0;
+    animation: form-step-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-form-step {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  @keyframes form-success-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  .animate-form-success {
+    opacity: 0;
+    animation: form-success-pop 0.45s ease-out forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-form-success {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  @keyframes nav-link-in {
+    from {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  .nav-mobile-link {
+    opacity: 0;
+    animation: nav-link-in 0.35s ease-out forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nav-mobile-link {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  @keyframes banner-glow {
+    0%, 100% { box-shadow: 0 0 18px rgba(166, 10, 10, 0.2); }
+    50% { box-shadow: 0 0 28px rgba(166, 10, 10, 0.35); }
+  }
+  .animate-banner-glow {
+    animation: banner-glow 3.5s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-banner-glow { animation: none; }
+  }
+
+  @keyframes pulse-call-ring {
+    0%, 100% { opacity: 0.65; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.03); }
+  }
+  .animate-pulse-call-ring {
+    animation: pulse-call-ring 2.2s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-pulse-call-ring { animation: none; }
+  }
+
+  @keyframes check-stroke {
+    to { stroke-dashoffset: 0; }
+  }
+  .animate-check-stroke {
+    stroke-dasharray: 48;
+    stroke-dashoffset: 48;
+    animation: check-stroke 0.55s ease-out forwards 0.15s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-check-stroke {
+      stroke-dashoffset: 0;
+      animation: none;
+    }
+  }
+}

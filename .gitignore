@@ -1,0 +1,27 @@
+# Dependencies
+node_modules
+
+# Next.js
+.next
+out
+
+# Environment (secrets)
+.env
+.env.local
+.env*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# Source assets (optimized copies live in public/)
+/Logo.svg
+/Logo.png
+/Roofing*
+/Siding*
