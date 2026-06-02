@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server'
+import { bookAppointment } from '@/lib/appointmentStore'
+import {
+  BOOKING_TIMEZONE,
+  BOOKING_TIMEZONE_LABEL,
+  formatAppointmentDisplay,
+  isSlotStartAllowed,
+} from '@/lib/booking'
 import { signJwtHS256 } from '@/lib/jwt'
 import { isRateLimited, rateLimitKey, validateLeadBody } from '@/lib/leadSecurity'
 import { isSameOriginRequest } from '@/lib/requestSecurity'
 
 const WEBHOOK_TIMEOUT_MS = 25_000
-const MAX_BODY_BYTES = 8_192
+const MAX_BODY_BYTES = 12_288
 
 function splitFullName(fullName: string) {
   const space = fullName.indexOf(' ')
@@ -76,8 +83,49 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validated.error }, { status: 400 })
     }
 
-    const { fullName, email, phone, address, service, timeline, privacyAccepted } = validated.data
+    const {
+      fullName,
+      email,
+      phone,
+      address,
+      service,
+      timeline,
+      privacyAccepted,
+      submissionType = 'scheduled',
+      appointmentDate,
+      appointmentTime,
+    } = validated.data
+
     const { firstName, lastName } = splitFullName(fullName)
+
+    let appointmentStartIso: string | null = null
+    let appointmentDisplay: string | null = null
+    let appointmentBooked = false
+
+    if (submissionType === 'scheduled') {
+      if (!appointmentDate || !appointmentTime) {
+        return NextResponse.json({ error: 'Appointment is required' }, { status: 400 })
+      }
+
+      if (!isSlotStartAllowed(appointmentDate, appointmentTime)) {
+        return NextResponse.json(
+          { error: 'That appointment time is no longer available. Please choose another slot.' },
+          { status: 409 },
+        )
+      }
+
+      const booked = bookAppointment({ date: appointmentDate, time: appointmentTime, email })
+      if (!booked) {
+        return NextResponse.json(
+          { error: 'That time slot was just booked. Please choose another time.' },
+          { status: 409 },
+        )
+      }
+
+      appointmentStartIso = new Date(booked.startMs).toISOString()
+      appointmentDisplay = formatAppointmentDisplay(appointmentDate, appointmentTime)
+      appointmentBooked = true
+    }
 
     const payload = {
       service,
@@ -91,6 +139,15 @@ export async function POST(request: Request) {
       zip: address,
       privacyAccepted,
       source: 'dgm-construction-landing',
+      submissionType,
+      appointmentBooked,
+      appointmentDate: appointmentDate ?? null,
+      appointmentTime: appointmentTime ?? null,
+      appointmentStart: appointmentStartIso,
+      appointmentDisplay,
+      appointmentTimezone: BOOKING_TIMEZONE,
+      appointmentTimezoneLabel: BOOKING_TIMEZONE_LABEL,
+      appointmentDurationMinutes: appointmentBooked ? 90 : null,
       submittedAt: new Date().toISOString(),
     }
 
@@ -137,7 +194,14 @@ export async function POST(request: Request) {
       )
     }
 
-    return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json(
+      {
+        ok: true,
+        appointmentDisplay,
+        appointmentStart: appointmentStartIso,
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    )
   } catch (err) {
     console.error('Lead API: unexpected error', err)
     return NextResponse.json(

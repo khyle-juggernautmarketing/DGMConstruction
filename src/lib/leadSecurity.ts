@@ -11,6 +11,8 @@ export const TIMELINES = ['asap-emergency', '1-2-weeks', 'planning-ahead'] as co
 export type Service = (typeof SERVICES)[number]
 export type Timeline = (typeof TIMELINES)[number]
 
+export type SubmissionType = 'scheduled' | 'form_only'
+
 export interface LeadFormData {
   service: Service | ''
   timeline: Timeline | ''
@@ -19,6 +21,9 @@ export interface LeadFormData {
   phone: string
   address: string
   privacyAccepted: boolean
+  submissionType?: SubmissionType
+  appointmentDate?: string
+  appointmentTime?: string
 }
 
 const MAX = {
@@ -44,9 +49,8 @@ export function isAllowedEnum<T extends string>(value: string, allowed: readonly
 }
 
 function isValidAddress(address: string): boolean {
-  if (address.length < 8) return false
-  if (!/[a-zA-Z]/.test(address)) return false
-  if (!/\d/.test(address)) return false
+  if (address.length < 3) return false
+  if (!/[a-zA-Z0-9]/.test(address)) return false
   return true
 }
 
@@ -71,9 +75,26 @@ export function validateLeadBody(body: unknown):
   const phone = sanitizeText(raw.phone, MAX.phone)
   const address = sanitizeText(raw.address ?? raw.zip, MAX.address)
   const privacyAccepted = raw.privacyAccepted === true
+  const submissionTypeRaw = sanitizeText(raw.submissionType, 32)
+  const submissionType: SubmissionType =
+    submissionTypeRaw === 'form_only' ? 'form_only' : 'scheduled'
+  const appointmentDate = sanitizeText(raw.appointmentDate, 10)
+  const appointmentTime = sanitizeText(raw.appointmentTime, 5)
 
   if (!service || !timeline || !fullName || !email || !phone || !address) {
     return { ok: false, error: 'Missing required fields' }
+  }
+
+  if (submissionType === 'scheduled') {
+    if (!appointmentDate || !appointmentTime) {
+      return { ok: false, error: 'Appointment date and time are required' }
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate)) {
+      return { ok: false, error: 'Invalid appointment date' }
+    }
+    if (!/^\d{2}:\d{2}$/.test(appointmentTime)) {
+      return { ok: false, error: 'Invalid appointment time' }
+    }
   }
 
   if (!privacyAccepted) {
@@ -98,12 +119,23 @@ export function validateLeadBody(body: unknown):
   }
 
   if (!isValidAddress(address)) {
-    return { ok: false, error: 'Invalid address' }
+    return { ok: false, error: 'Please enter a valid address or location.' }
   }
 
   return {
     ok: true,
-    data: { service, timeline, fullName, email, phone, address, privacyAccepted },
+    data: {
+      service,
+      timeline,
+      fullName,
+      email,
+      phone,
+      address,
+      privacyAccepted,
+      submissionType,
+      appointmentDate: appointmentDate || undefined,
+      appointmentTime: appointmentTime || undefined,
+    },
   }
 }
 

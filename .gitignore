@@ -26,3 +26,4 @@ npm-debug.log*
 /Roofing*
 /Siding*
 .vercel
+.data

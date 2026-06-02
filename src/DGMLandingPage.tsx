@@ -1,7 +1,8 @@
 'use client'
 
 import Image from 'next/image'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Award,
   BadgeCheck,
@@ -21,6 +22,8 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
+import { AppointmentCalendar } from '@/components/AppointmentCalendar'
+import { FORM_FALLBACK_MS, formatAppointmentDisplay } from '@/lib/booking'
 
 const BRAND = {
   name: 'DGM Construction LLC',
@@ -153,6 +156,7 @@ const FORM_STEPS = [
   { id: 1, title: 'Select your service' },
   { id: 2, title: 'Project timeline' },
   { id: 3, title: 'Your contact details' },
+  { id: 4, title: 'Schedule your inspection' },
 ]
 
 const HTML_TAG = /<[^>]*>/g
@@ -394,12 +398,113 @@ const initialLeadForm: LeadFormState = {
 }
 
 function LeadForm() {
+  const router = useRouter()
   const stepAdvanceDelayMs = useStepAdvanceDelay()
   const [step, setStep] = useState(1)
   const [data, setData] = useState<LeadFormState>(initialLeadForm)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'scheduling'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [honeypot, setHoneypot] = useState('')
+  const [appointmentDate, setAppointmentDate] = useState('')
+  const [appointmentTime, setAppointmentTime] = useState('')
+  const submittedRef = useRef(false)
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearFallbackTimer = useCallback(() => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current)
+      fallbackTimerRef.current = null
+    }
+  }, [])
+
+  const buildPayload = useCallback(
+    (submissionType: 'scheduled' | 'form_only') => {
+      const fullName = sanitizeInput(data.fullName.trim())
+      const email = sanitizeInput(data.email.trim())
+      const phone = sanitizeInput(data.phone.trim())
+      const address = sanitizeInput(data.address.trim())
+
+      return {
+        service: data.service,
+        timeline: data.timeline,
+        fullName,
+        email,
+        phone,
+        address,
+        privacyAccepted: data.privacyAccepted,
+        submissionType,
+        appointmentDate: submissionType === 'scheduled' ? appointmentDate : undefined,
+        appointmentTime: submissionType === 'scheduled' ? appointmentTime : undefined,
+        website: honeypot,
+      }
+    },
+    [appointmentDate, appointmentTime, data, honeypot],
+  )
+
+  const postLead = useCallback(async (payload: ReturnType<typeof buildPayload>) => {
+    const res = await fetch('/api/lead', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    return res
+  }, [])
+
+  const sendToWebhook = useCallback(
+    async (submissionType: 'scheduled' | 'form_only') => {
+      if (submittedRef.current) return true
+      submittedRef.current = true
+      clearFallbackTimer()
+
+      const payload = buildPayload(submissionType)
+      let res = await postLead(payload)
+
+      if (res.status === 503 || res.status === 502) {
+        await new Promise((r) => setTimeout(r, 800))
+        res = await postLead(payload)
+      }
+
+      if (!res.ok) {
+        submittedRef.current = false
+        const j = (await res.json().catch(() => null)) as { error?: string } | null
+        setErrorMsg(
+          j?.error ??
+            `Something went wrong (error ${res.status}). Please call us at ${BRAND.phone}.`,
+        )
+        return false
+      }
+
+      return true
+    },
+    [buildPayload, clearFallbackTimer, postLead],
+  )
+
+  const goToThankYou = useCallback(
+    (scheduled: boolean, when?: string) => {
+      const params = new URLSearchParams({ scheduled: scheduled ? '1' : '0' })
+      if (when) params.set('when', when)
+      router.push(`/thank-you?${params.toString()}`)
+    },
+    [router],
+  )
+
+  useEffect(() => {
+    return () => clearFallbackTimer()
+  }, [clearFallbackTimer])
+
+  const startFallbackTimer = useCallback(() => {
+    clearFallbackTimer()
+    fallbackTimerRef.current = setTimeout(async () => {
+      if (submittedRef.current) return
+      setStatus('loading')
+      const ok = await sendToWebhook('form_only')
+      if (ok) {
+        goToThankYou(false)
+      } else {
+        setStatus('scheduling')
+      }
+    }, FORM_FALLBACK_MS)
+  }, [clearFallbackTimer, goToThankYou, sendToWebhook])
 
   const selectService = useCallback(
     (value: string) => {
@@ -429,10 +534,10 @@ function LeadForm() {
       setErrorMsg('Please select a timeline.')
       return
     }
-    setStep((s) => Math.min(s + 1, 3))
+    setStep((s) => Math.min(s + 1, 4))
   }
 
-  const submit = async (e: React.FormEvent) => {
+  const submitContact = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg('')
 
@@ -454,8 +559,8 @@ function LeadForm() {
       setErrorMsg('Please enter a valid email.')
       return
     }
-    if (address.length < 8 || !/[a-zA-Z]/.test(address) || !/\d/.test(address)) {
-      setErrorMsg('Please enter a complete street address.')
+    if (address.length < 3) {
+      setErrorMsg('Please enter your address or city.')
       return
     }
     if (!data.privacyAccepted) {
@@ -463,77 +568,27 @@ function LeadForm() {
       return
     }
 
-    const payload = {
-      service: data.service,
-      timeline: data.timeline,
-      fullName,
-      email,
-      phone,
-      address,
-      privacyAccepted: data.privacyAccepted,
-      website: honeypot,
+    setData((d) => ({ ...d, fullName, email, phone, address }))
+    setStep(4)
+    setStatus('scheduling')
+    startFallbackTimer()
+  }
+
+  const confirmAppointment = async () => {
+    setErrorMsg('')
+    if (!appointmentDate || !appointmentTime) {
+      setErrorMsg('Please select a date and time for your inspection.')
+      return
     }
 
     setStatus('loading')
-    try {
-      const postLead = () =>
-        fetch('/api/lead', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify(payload),
-        })
-
-      let res = await postLead()
-
-      if (res.status === 503 || res.status === 502) {
-        await new Promise((r) => setTimeout(r, 800))
-        res = await postLead()
-      }
-
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null
-        setStatus('idle')
-        setErrorMsg(
-          j?.error ??
-            `Something went wrong (error ${res.status}). Please call us at ${BRAND.phone}.`,
-        )
-        return
-      }
-
-      setData(initialLeadForm)
-      setStep(1)
-      setHoneypot('')
-      setStatus('success')
-    } catch {
-      setStatus('idle')
-      setErrorMsg(`Connection failed. Please call us directly at ${BRAND.phone}.`)
+    const ok = await sendToWebhook('scheduled')
+    if (ok) {
+      const when = formatAppointmentDisplay(appointmentDate, appointmentTime)
+      goToThankYou(true, when)
+    } else {
+      setStatus('scheduling')
     }
-  }
-
-  if (status === 'success') {
-    return (
-      <div
-        className="animate-form-success flex min-h-[340px] flex-col items-center justify-center px-4 text-center"
-        aria-live="polite"
-      >
-        <SuccessMarks />
-        <h3 className="mt-5 text-xl font-bold text-brand-navy">Request Received!</h3>
-        <p className="mt-2 max-w-sm text-brand-charcoal">
-          We&apos;ll reach out shortly. For urgent storm damage, call{' '}
-          <a href={BRAND.phoneHref} className="font-bold text-brand-crimson hover:underline">
-            {BRAND.phone}
-          </a>
-          .
-        </p>
-        <button
-          type="button"
-          onClick={() => setStatus('idle')}
-          className="mt-8 min-h-12 border-2 border-brand-navy px-6 text-sm font-bold text-brand-navy hover:bg-brand-navy hover:text-white"
-        >
-          Submit another request
-        </button>
-      </div>
-    )
   }
 
   return (
@@ -604,7 +659,7 @@ function LeadForm() {
           )}
 
           {step === 3 && (
-            <form onSubmit={submit} className="space-y-3">
+            <form onSubmit={submitContact} className="space-y-3">
               <label className="sr-only" aria-hidden>
                 Website
                 <input
@@ -671,23 +726,50 @@ function LeadForm() {
               )}
               <button
                 type="submit"
+                className="flex min-h-12 w-full items-center justify-center gap-2 bg-brand-crimson text-base font-bold uppercase tracking-wide text-white transition-colors hover:bg-brand-navy sm:text-sm"
+              >
+                Continue to Scheduling
+              </button>
+            </form>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-4">
+              <AppointmentCalendar
+                selectedDate={appointmentDate}
+                selectedTime={appointmentTime}
+                onSelectDate={setAppointmentDate}
+                onSelectTime={setAppointmentTime}
+                disabled={status === 'loading'}
+              />
+              {errorMsg && (
+                <p className="text-sm font-medium text-brand-crimson" role="alert">
+                  {errorMsg}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={confirmAppointment}
                 disabled={status === 'loading'}
                 className="flex min-h-12 w-full items-center justify-center gap-2 bg-brand-crimson text-base font-bold uppercase tracking-wide text-white transition-colors hover:bg-brand-navy disabled:opacity-70 sm:text-sm"
               >
                 {status === 'loading' ? (
                   <>
                     <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-                    Sending...
+                    Confirming…
                   </>
                 ) : (
-                  'Get My Free Inspection'
+                  'Confirm Appointment'
                 )}
               </button>
-            </form>
+              <p className="text-center text-[11px] leading-relaxed text-brand-charcoal">
+                If you don&apos;t pick a time within 10 minutes, we&apos;ll still receive your contact details.
+              </p>
+            </div>
           )}
         </div>
 
-        {errorMsg && step !== 3 && (
+        {errorMsg && step !== 3 && step !== 4 && (
           <p className="mt-3 text-sm font-medium text-brand-crimson" role="alert">
             {errorMsg}
           </p>
@@ -699,6 +781,7 @@ function LeadForm() {
               type="button"
               onClick={() => {
                 setErrorMsg('')
+                if (step === 4) clearFallbackTimer()
                 setStep((s) => Math.max(1, s - 1))
               }}
               className="min-h-12 text-sm font-bold text-brand-charcoal hover:text-brand-crimson"
